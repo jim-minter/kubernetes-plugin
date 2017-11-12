@@ -17,16 +17,21 @@ import hudson.model.Descriptor;
 import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.TaskListener;
+import hudson.remoting.Callable;
 import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.Cloud;
 import hudson.slaves.JNLPLauncher;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.RetentionStrategy;
+import hudson.slaves.SlaveComputer;
+import io.fabric8.kubernetes.api.model.ContainerStateTerminated;
+import io.fabric8.kubernetes.api.model.ContainerStatus;
 import io.fabric8.kubernetes.api.model.DoneablePod;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.ClientPodResource;
 import jenkins.model.Jenkins;
+import jenkins.security.MasterToSlaveCallable;
 
 /**
  * @author Carlos Sanchez carlos@apache.org
@@ -112,6 +117,9 @@ public class KubernetesSlave extends AbstractCloudSlave {
             return;
         }
 
+        LOGGER.log(Level.INFO, "Killing slave");
+        computer.getChannel().callAsync(new Killer());
+
         if (cloudName == null) {
             String msg = String.format("Cloud name is not set for slave, can't terminate: %s", name);
             LOGGER.log(Level.SEVERE, msg);
@@ -136,6 +144,29 @@ public class KubernetesSlave extends AbstractCloudSlave {
             }
             KubernetesClient client = ((KubernetesCloud) cloud).connect();
             ClientPodResource<Pod, DoneablePod> pods = client.pods().withName(name);
+
+            Pod p = null;
+            LOGGER.log(Level.INFO, "Waiting up to 60 seconds for pod to terminate");
+            for (int i = 0; i < 60; i++) {
+              p = pods.get();
+              if (p == null)
+                return;
+
+              if (!p.getStatus().getPhase().equals("Running"))
+                break;
+
+              Thread.sleep(1000);
+            }
+
+            for (ContainerStatus cs : p.getStatus().getContainerStatuses()) {
+              ContainerStateTerminated t = cs.getState().getTerminated();
+              if (t != null && t.getReason().equals("OOMKilled")) {
+                String msg = String.format("Container %s of pod %s was OOMKilled, not deleting pod", cs.getContainerID(), p.getMetadata().getName());
+                LOGGER.log(Level.WARNING, msg);
+                return;
+              }
+            }
+
             pods.delete();
             String msg = String.format("Terminated Kubernetes instance for slave %s", name);
             LOGGER.log(Level.INFO, msg);
