@@ -27,6 +27,7 @@ import hudson.model.Descriptor;
 import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.TaskListener;
+import hudson.remoting.VirtualChannel;
 import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.Cloud;
 import hudson.slaves.OfflineCause;
@@ -172,15 +173,19 @@ public class KubernetesSlave extends AbstractCloudSlave {
             return;
         }
 
-        OfflineCause offlineCause = OfflineCause.create(new Localizable(HOLDER, "offline"));
-
-        Future<?> disconnected = computer.disconnect(offlineCause);
-        // wait a bit for disconnection to avoid stack traces in logs
+        VirtualChannel channel = computer.getChannel();
+        if (channel == null) {
+            String msg = String.format("Channel for computer is null: %s", name);
+            LOGGER.log(Level.SEVERE, msg);
+            listener.fatalError(msg);
+            return;
+        }
+        
         try {
-            disconnected.get(DISCONNECTION_TIMEOUT, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            String msg = String.format("Ignoring error waiting for agent disconnection %s: %s", name, e.getMessage());
-            LOGGER.log(Level.INFO, msg, e);
+            channel.close();
+            //channel.callAsync(new Exiter());
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "Failed to run Exiter on slave", e);
         }
 
         if (getCloudName() == null) {
@@ -208,20 +213,22 @@ public class KubernetesSlave extends AbstractCloudSlave {
         }
 
         String actualNamespace = getNamespace() == null ? client.getNamespace() : getNamespace();
-        try {
-            Boolean deleted = client.pods().inNamespace(actualNamespace).withName(name).delete();
-            if (!Boolean.TRUE.equals(deleted)) {
-                String msg = String.format("Failed to delete pod for agent %s/%s: not found", actualNamespace, name);
-                LOGGER.log(Level.WARNING, msg);
+        if (!template.isNoDelete()) {
+            try {
+                Boolean deleted = client.pods().inNamespace(actualNamespace).withName(name).delete();
+                if (!Boolean.TRUE.equals(deleted)) {
+                    String msg = String.format("Failed to delete pod for agent %s/%s: not found", actualNamespace, name);
+                    LOGGER.log(Level.WARNING, msg);
+                    listener.error(msg);
+                    return;
+                }
+            } catch (KubernetesClientException e) {
+                String msg = String.format("Failed to delete pod for agent %s/%s: %s", actualNamespace, name,
+                        e.getMessage());
+                LOGGER.log(Level.WARNING, msg, e);
                 listener.error(msg);
                 return;
             }
-        } catch (KubernetesClientException e) {
-            String msg = String.format("Failed to delete pod for agent %s/%s: %s", actualNamespace, name,
-                    e.getMessage());
-            LOGGER.log(Level.WARNING, msg, e);
-            listener.error(msg);
-            return;
         }
 
         String msg = String.format("Terminated Kubernetes instance for agent %s/%s", actualNamespace, name);

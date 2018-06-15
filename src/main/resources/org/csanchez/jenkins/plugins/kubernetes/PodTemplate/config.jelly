@@ -81,6 +81,10 @@
       <f:textbox/>
     </f:entry>
 
+    <f:entry field="noDelete" title="${%Don't delete slave pod after completion}">
+      <f:checkbox default="false"/>
+    </f:entry>
+
     <f:descriptorList title="${%Node Properties}" descriptors="${h.getNodePropertyDescriptors(descriptor.clazz)}" field="nodeProperties" />
     <f:block>
       <table>

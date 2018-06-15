@@ -131,6 +131,7 @@ public class PodTemplateUtils {
         podTemplate.setAnnotations(new ArrayList<>(podAnnotations));
         podTemplate.setNodeProperties(toolLocationNodeProperties);
         podTemplate.setNodeUsageMode(nodeUsageMode);
+        podTemplate.setNoDelete(parent.isNoDelete() || template.isNoDelete());
 
         return podTemplate;
     }

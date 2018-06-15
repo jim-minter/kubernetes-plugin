@@ -103,6 +103,8 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
 
     private transient List<ToolLocationNodeProperty> nodeProperties;
 
+    private boolean noDelete;
+
     @DataBoundConstructor
     public PodTemplate() {
     }
@@ -123,6 +125,7 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
         this.setActiveDeadlineSeconds(from.getActiveDeadlineSeconds());
         this.setVolumes(from.getVolumes());
         this.setWorkspaceVolume(from.getWorkspaceVolume());
+        this.setNoDelete(from.isNoDelete());
     }
 
     @Deprecated
@@ -591,5 +594,14 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
         public String getDisplayName() {
             return "Kubernetes Pod Template";
         }
+    }
+
+    public boolean isNoDelete() {
+        return noDelete;
+    }
+
+    @DataBoundSetter
+    public void setNoDelete(boolean noDelete) {
+        this.noDelete = noDelete;
     }
 }
